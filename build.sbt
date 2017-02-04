@@ -4,9 +4,7 @@ description := "play-json as it was supposed to be"
 version := "0.1"
 
 scalaVersion := "2.11.8"
-
-// TODO: Check on 2.12
-// crossScalaVersions := Seq("2.11.8", "2.12.1")
+crossScalaVersions := Seq("2.11.8", "2.12.1")
 
 libraryDependencies := Seq(
   "com.typesafe.play" %% "play-json" % "2.6.0-M1",
