@@ -18,7 +18,7 @@ package ru.makkarpov.extjson
 
 import play.api.libs.json._
 
-object JsonFormats {
+object JsonFormats extends Tuples {
   implicit def optionFormat[T](implicit fmt: Format[T]): Format[Option[T]] = new Format[Option[T]] {
     override def writes(o: Option[T]) = JsArray(o.map(fmt.writes).toSeq)
     override def reads(json: JsValue): JsResult[Option[T]] = json match {

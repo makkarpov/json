@@ -37,7 +37,11 @@ object JsonUtils {
     case _ => JsError("expected object")
   }
 
-  def mergeErrors(errs: JsError*): JsError = JsError(errs.flatMap(_.errors))
+  def mergeErrors(errs: JsResult[_]*): JsError =
+    JsError(errs.flatMap {
+      case JsSuccess(_, _) => Nil
+      case JsError(e) => e
+    })
 
   def mergeResults[T](results: JsResult[_]*)(f: => T): JsResult[T] =
     results.flatMap {

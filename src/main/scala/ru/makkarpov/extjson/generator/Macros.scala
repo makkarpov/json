@@ -47,14 +47,17 @@ class Macros(val c: whitebox.Context) extends Utils with Structured with Miscell
       requireImplicit = requireImplicit || GenerationContext.requireImplicit(t.typeSymbol)
     )
 
-    def sub(t: Symbol): GenerationContext = copy(
+    def subGenerate(sym: Symbol): Tree = generate(toType(sym), copy(
       initial = false,
-      requireImplicit = GenerationContext.requireImplicit(t),
-      generationStack = toType(t) :: generationStack
-    )
+      requireImplicit = GenerationContext.requireImplicit(sym),
+      generationStack = toType(sym) :: generationStack
+    ))
 
-    def subGenerate(t: Symbol): Tree = generate(toType(t), sub(t))
-    def subGenerate(t: Type): Tree = generate(t, sub(t.typeSymbol))
+    def subGenerate(t: Type): Tree = generate(t, copy(
+      initial = false,
+      requireImplicit = GenerationContext.requireImplicit(t.typeSymbol),
+      generationStack = t :: generationStack
+    ))
 
     def abort(msg: String): Nothing = {
       val currentType = show(generationStack.head)
@@ -86,7 +89,7 @@ class Macros(val c: whitebox.Context) extends Utils with Structured with Miscell
       if (clazz.isSealed) {
         ret = generateSealedClass(ctx, clazz)
       } else if (isTuple(clazz)) {
-        ret = generateTuple(ctx, clazz)
+        ret = generateTuple(ctx, t)
       } else if (clazz.isCaseClass) {
         ret = generateCaseClass(ctx, clazz)
       }

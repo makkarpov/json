@@ -127,6 +127,14 @@ object JsonSuite {
   object Test21 {
     case class NotSubclass(x: Int)
   }
+
+  // 22+ field case classes
+  case class Test22(a: Int, b: Int, c: Int, d: Int, e: Int, f: Int, g: Int, h: Int, i: Int, j: Int, k: Int, l: Int,
+                    m: Int, n: Int, o: Int, p: Int, q: Int, r: Int, s: Int, t: Int, u: Int, v: Int, w: Int, x: Int,
+                    y: Int, z: Int)
+
+  case class Test23S(x: String, y: Int)
+  case class Test23(tuple: (Int, Test23S))
 }
 
 class JsonSuite extends WordSpec with Matchers {
@@ -197,6 +205,13 @@ class JsonSuite extends WordSpec with Matchers {
     "reject @formatInline for classes with multiple arguments" in {
       "Json.generate[Test1]" should compile
       "Json.generate[Test7]" shouldNot typeCheck
+    }
+
+    "handle 22+ field case classes" in {
+      implicit val format = Json.generate[Test22]
+
+      val test = Test22(1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1)
+      Json.toJson(test).as[Test22] shouldBe test
     }
 
     "handle @requireImplicit" in {
@@ -400,6 +415,23 @@ class JsonSuite extends WordSpec with Matchers {
       Json.parse("{\"a\":[]}").as[Test19] shouldBe Test19(None, None)
       Json.parse("{\"a\":[123]}").as[Test19] shouldBe Test19(Some(123), None)
       Json.parse("{\"a\":123}").asOpt[Test19] shouldBe None
+    }
+
+    "handle plain tuples" in {
+      implicit val fmt = Json.generate[(String, Int, Boolean)]
+
+      Json.toJson(("test", 123, true)).toString shouldBe "[\"test\",123,true]"
+      Json.parse("[\"123\",456,false]").as[(String, Int, Boolean)] shouldBe ("123", 456, false)
+      Json.parse("[]").asOpt[(String, Int, Boolean)] shouldBe None
+      Json.parse("[123,456,false]").asOpt[(String, Int, Boolean)] shouldBe None
+      Json.parse("[\"123\",456,false,123]").asOpt[(String, Int, Boolean)] shouldBe None
+    }
+
+    "handle nested tuples" in {
+      implicit val fmt = Json.generate[Test23]
+
+      Json.toJson(Test23(123 -> Test23S("some", 456))).toString shouldBe "{\"tuple\":[123,{\"x\":\"some\",\"y\":456}]}"
+      Json.parse("{\"tuple\":[456,{\"x\":\"abc\",\"y\":321}]}").as[Test23] shouldBe Test23(456 -> Test23S("abc", 321))
     }
   }
 }

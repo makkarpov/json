@@ -338,7 +338,10 @@ trait Structured { this: Macros =>
     else taggedSerializer
   }
 
-  def generateTuple(ctx: GenerationContext, clazz: ClassSymbol): Tree = {
-    ???
+  def generateTuple(ctx: GenerationContext, tuple: Type): Tree = {
+    val subs = tuple.typeArgs
+    val funcName = TermName(s"tuple${subs.size}Format")
+
+    q"$ownPkg.JsonFormats.$funcName[..$subs](..${subs.map(ctx.subGenerate)})"
   }
 }
