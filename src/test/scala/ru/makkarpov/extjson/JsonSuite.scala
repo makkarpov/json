@@ -112,6 +112,21 @@ object JsonSuite {
   case class Test18(a: Option[Int], b: Option[Int])
 
   case class Test19(@plainOption a: Option[Int], b: Option[Int])
+
+  @formatInline
+  sealed trait Test20
+  object Test20 {
+    @fallbackCase @formatInline
+    case class VOther(x: JsValue) extends Test20
+    case class VInt(x: Int) extends Test20
+    case class VStr(x: String) extends Test20
+  }
+
+  @addSubclass[Test21.NotSubclass]
+  sealed trait Test21
+  object Test21 {
+    case class NotSubclass(x: Int)
+  }
 }
 
 class JsonSuite extends WordSpec with Matchers {
@@ -242,6 +257,26 @@ class JsonSuite extends WordSpec with Matchers {
     "reject multiple type values" in {
       "Json.generate[Test1]" should compile
       "Json.generate[Test14]" shouldNot typeCheck
+    }
+
+    "handle untagged sealed classes" in {
+      import Test20._
+      implicit val fmt = Json.generate[Test20]
+
+      Json.toJson(VStr("test")).toString shouldBe "{\"x\":\"test\"}"
+      Json.toJson(VInt(123)).toString shouldBe "{\"x\":123}"
+      Json.toJson(VOther(Json.obj("x" -> Json.arr(1, 2, 3), "y" -> "hello"))).toString shouldBe
+        "{\"x\":[1,2,3],\"y\":\"hello\"}"
+
+      Json.parse("{\"x\":\"qwe\"}").as[Test20] shouldBe VStr("qwe")
+      Json.parse("{\"x\":123}").as[Test20] shouldBe VInt(123)
+      Json.parse("{}").as[Test20] shouldBe VOther(Json.obj())
+      Json.parse("{\"x\":{}}").as[Test20] shouldBe VOther(Json.obj("x" -> Json.obj()))
+    }
+
+    "reject @addSubclass with non-subclasses" in {
+      "Json.generate[Test1]" should compile
+      "Json.generate[Test21]" shouldNot typeCheck
     }
 
     "generate Seqs and Sets" in {

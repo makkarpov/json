@@ -119,7 +119,7 @@ trait Structured { this: Macros =>
       q"""
         def reads($inputParameter: _root_.play.api.libs.json.JsValue): $jsonPkg.JsResult[$clazzType] = {
           ..$defs
-          $ownPkg.JsonUtils.mergeErrors[$clazzType](..$termNames)(new $clazz(..${termNames.map(tn => q"$tn.get")}))
+          $ownPkg.JsonUtils.mergeResults[$clazzType](..$termNames)(new $clazz(..${termNames.map(tn => q"$tn.get")}))
         }
       """
     }
@@ -172,10 +172,18 @@ trait Structured { this: Macros =>
       subclasses = clazz.knownDirectSubclasses.toVector
     }
 
-    if (annotationPresent[addSubclass[_]](clazz))
-      subclasses ++= clazz.annotations
+    if (annotationPresent[addSubclass[_]](clazz)) {
+      val added = clazz.annotations
         .filter(_.tree.tpe.dealias.erasure =:= typeOf[addSubclass[_]].erasure)
-        .map(_.tree.tpe.typeArgs.head.typeSymbol)
+        .map(_.tree.tpe.typeArgs.head)
+
+      added.filterNot(_ <:< clazzType) match {
+        case Nil =>
+        case x => ctx.abort(s"Found @addSubclass with non-subclass arguments: ${x.mkString(", ")}")
+      }
+
+      subclasses ++= added.map(_.typeSymbol)
+    }
 
     subclasses = subclasses.distinct
 
@@ -197,90 +205,137 @@ trait Structured { this: Macros =>
       found.headOption
     }
 
-    val tField =
-      if (annotationPresent[typeField](clazz)) stringLiteral(singleArgAnnotation[typeField](clazz)) match {
-        case Some(s) => s
-        case None => ctx.abort("Only string literals are allowed for @typeField(...)")
-      } else "type"
+    val serializers = subclasses.map { sc =>
+      val name = TermName(c.freshName("serializer"))
+      val valdef = q"val $name = ${ctx.subGenerate(sc)}"
+      sc -> (name -> valdef)
+    }.toMap
 
-    val tValues = {
-      val r = subclasses.map { sc =>
-        if (annotationPresent[typeValue](sc)) stringLiteral(singleArgAnnotation[typeValue](sc)) match {
+    val serializerDefs = subclasses.map(x => serializers(x)._2)
+
+    def taggedSerializer: Tree = {
+      val tField =
+        if (annotationPresent[typeField](clazz)) stringLiteral(singleArgAnnotation[typeField](clazz)) match {
           case Some(s) => s
-          case None => ctx.abort("Only string literals are allowed for @typeValue(...)")
-        } else sc.name.decodedName.toString
+          case None => ctx.abort("Only string literals are allowed for @typeField(...)")
+        } else "type"
+
+      val tValues = {
+        val r = subclasses.map { sc =>
+          if (annotationPresent[typeValue](sc)) stringLiteral(singleArgAnnotation[typeValue](sc)) match {
+            case Some(s) => s
+            case None => ctx.abort("Only string literals are allowed for @typeValue(...)")
+          } else sc.name.decodedName.toString
+        }
+
+        val dups = r.diff(r.distinct).distinct
+
+        if (dups.nonEmpty)
+          ctx.abort(s"Duplicate types: ${dups.mkString(", ")}")
+
+        r
       }
 
-      val dups = r.diff(r.distinct).distinct
+      def generateWrites: Tree = {
+        val inputParameter = TermName("obj")
 
-      if (dups.nonEmpty)
-        ctx.abort(s"Duplicate types: ${dups.mkString(", ")}")
+        val matches = subclasses.zipWithIndex.map { case (sc, i) =>
+          val pat = TermName("x")
+          cq"$pat: $sc => $ownPkg.JsonUtils.addType($tField, ${tValues(i)}, ${serializers(sc)._1}.writes($pat))"
+        }
 
-      r
-    }
-
-    val serializerNames = subclasses.map(_ => TermName(c.freshName("serializer")))
-
-    val serializerDefs = subclasses.zipWithIndex.map { case (a, i) =>
-      q"val ${serializerNames(i)} = ${ctx.subGenerate(a)}"
-    }
-
-    def generateWrites: Tree = {
-      val inputParameter = TermName("obj")
-
-      val matches = subclasses.zipWithIndex.map { case (sc, i) =>
-        val pat = TermName("x")
-
-        cq"$pat: $sc => $ownPkg.JsonUtils.addType($tField, ${tValues(i)}, ${serializerNames(i)}.writes($pat))"
-      }
-
-      q"""
+        q"""
         def writes($inputParameter: $clazzType): $jsonPkg.JsValue = $inputParameter match { case ..$matches }
       """
-    }
-
-    def generateReads: Tree = {
-      val inputParameter = TermName("js")
-      val typeVar = TermName("type")
-      val dataVar = TermName("data")
-      val retVar = TermName("ret")
-
-      var matches = subclasses.indices.map(i => cq"${tValues(i)} => ${serializerNames(i)}.reads($dataVar)")
-
-      fallbackClass match {
-        case Some(fc) =>
-          val i = subclasses.indexWhere(_ == fc)
-
-          if (i == -1)
-            ctx.abort("Internal error: failed to find fallbackClass in subclasses")
-
-          matches :+= cq"_ => ${serializerNames(i)}.reads($dataVar)"
-
-        case None =>
-          val pat = TermName("x")
-          val msg = "unknown type"
-          matches :+= cq"$pat => $jsonPkg.JsError($msg + $pat)"
       }
 
-      q"""
+      def generateReads: Tree = {
+        val inputParameter = TermName("js")
+        val typeVar = TermName("type")
+        val dataVar = TermName("data")
+        val retVar = TermName("ret")
+
+        var matches = subclasses.zipWithIndex.map { case (sc, i) =>
+          cq"${tValues(i)} => ${serializers(sc)._1}.reads($dataVar)"
+        }
+
+        fallbackClass match {
+          case Some(fc) =>
+            matches :+= cq"_ => ${serializers(fc)._1}.reads($dataVar)"
+
+          case None =>
+            val pat = TermName("x")
+            val msg = "unknown type"
+            matches :+= cq"$pat => $jsonPkg.JsError($msg + $pat)"
+        }
+
+        q"""
         def reads($inputParameter: $jsonPkg.JsValue): $jsonPkg.JsResult[$clazzType] =
           for {
             ($dataVar, $typeVar) <- $ownPkg.JsonUtils.stripType($tField, $inputParameter)
             $retVar <- $typeVar match { case ..$matches }
           } yield $retVar
       """
+      }
+
+      q"""
+        new $jsonPkg.Format[$clazzType] {
+          ..$serializerDefs
+
+          $generateWrites
+          $generateReads
+        }
+      """
     }
 
-    val ret = q"""
-      new $jsonPkg.Format[$clazzType] {
-        ..$serializerDefs
+    def untaggedSerializer: Tree = {
+      val sortedClasses = subclasses.sortWith((a, b) =>
+        if (fallbackClass.contains(a)) false
+        else if (fallbackClass.contains(b)) true
+        else false
+      )
 
-        $generateWrites
-        $generateReads
+      def generateReads: Tree = {
+        val inputParameter = TermName("js")
+        val errs = sortedClasses.map { sc =>
+          val name = TermName(c.freshName("error"))
+          val pat = TermName("x")
+          name -> q"""
+            val $name = ${serializers(sc)._1}.reads($inputParameter) match {
+              case $jsonPkg.JsSuccess($pat, _) => return $jsonPkg.JsSuccess($pat)
+              case $pat: $jsonPkg.JsError => $pat
+            }
+          """
+        }
+
+        q"""
+          def reads($inputParameter: $jsonPkg.JsValue): $jsonPkg.JsResult[$clazzType] = {
+            ..${errs.map(_._2)}
+            $ownPkg.JsonUtils.mergeErrors(..${errs.map(_._1)})
+          }
+        """
       }
-    """
 
-    ret
+      def generateWrites: Tree = {
+        val inputParameter = TermName("obj")
+        val matches = subclasses.zipWithIndex.map { case (sc, i) =>
+          val pat = TermName("x")
+          cq"$pat: $sc => ${serializers(sc)._1}.writes($pat)"
+        }
+        q"def writes($inputParameter: $clazzType): $jsonPkg.JsValue = $inputParameter match { case ..$matches }"
+      }
+
+      q"""
+        new $jsonPkg.Format[$clazzType] {
+          ..$serializerDefs
+          $generateReads
+          $generateWrites
+        }
+      """
+    }
+
+    if (annotationPresent[formatInline](clazz)) untaggedSerializer
+    else taggedSerializer
   }
 
   def generateTuple(ctx: GenerationContext, clazz: ClassSymbol): Tree = {

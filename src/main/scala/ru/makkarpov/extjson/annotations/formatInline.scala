@@ -19,17 +19,7 @@ package ru.makkarpov.extjson.annotations
 import scala.annotation.StaticAnnotation
 
 /**
-  * Has effect only on case classes with single field. When specified, serializer does not generate case-class wrapper,
-  * field is serialized directly:
-  *
-  * <pre>
-  *   @formatInline
-  *   case class A(a: String)
-  *   implicit val aFormat = Json.generate[A]
-  *
-  *   Json.toJson(A("123")).toString == "\"123\""
-  * </pre>
-  *
-  * Name `formatInline` was chosen to avoid confusion with `@scala.inline`
+  * On case classes with single field it forces serializer to write this field directly to JSON, omitting object wrapper.
+  * On sealed classes/traits it forces serializer to omit type tags.
   */
 case class formatInline() extends StaticAnnotation
