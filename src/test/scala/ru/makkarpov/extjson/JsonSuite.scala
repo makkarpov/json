@@ -433,5 +433,15 @@ class JsonSuite extends WordSpec with Matchers {
       Json.toJson(Test23(123 -> Test23S("some", 456))).toString shouldBe "{\"tuple\":[123,{\"x\":\"some\",\"y\":456}]}"
       Json.parse("{\"tuple\":[456,{\"x\":\"abc\",\"y\":321}]}").as[Test23] shouldBe Test23(456 -> Test23S("abc", 321))
     }
+
+    "handle GeneratedFormat" in {
+      def test[T](t: T)(implicit fmt: GeneratedFormat[T]) = {
+        import fmt.implicitFmt
+        Json.toJson(t).toString
+      }
+
+      test(Test1("a", 123, true)) shouldBe "{\"a\":\"a\",\"b\":123,\"c\":true}"
+      test(Test6("qwe")) shouldBe "\"qwe\""
+    }
   }
 }

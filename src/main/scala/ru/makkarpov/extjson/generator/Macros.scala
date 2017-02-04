@@ -30,6 +30,12 @@ object Macros {
     val mm = new Macros(c)
     mm.generate(tag.asInstanceOf[mm.c.WeakTypeTag[T]]).asInstanceOf[c.Tree]
   }
+
+  def materializeFormat[T: c.WeakTypeTag](c: whitebox.Context): c.Tree = {
+    import c.universe._
+    val underlying = generateImpl(c)
+    q"_root_.ru.makkarpov.extjson.GeneratedFormat($underlying)"
+  }
 }
 
 class Macros(val c: whitebox.Context) extends Utils with Structured with Miscellaneous {
