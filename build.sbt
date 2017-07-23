@@ -1,13 +1,13 @@
 organization := "ru.makkarpov"
 name := "pray-json"
 description := "play-json as it was supposed to be"
-version := "0.1"
+version := "0.2"
 
 scalaVersion := "2.11.8"
 crossScalaVersions := Seq("2.11.8", "2.12.1")
 
 libraryDependencies := Seq(
-  "com.typesafe.play" %% "play-json" % "2.6.0-M1",
+  "com.typesafe.play" %% "play-json" % "2.6.2",
   "org.scala-lang" % "scala-reflect" % scalaVersion.value,
 
   "org.scalatest" %% "scalatest" % "3.0.1" % Test
