@@ -1,7 +1,7 @@
 organization := "ru.makkarpov"
 name := "pray-json"
 description := "play-json as it was supposed to be"
-version := "0.2"
+version := "0.3"
 
 scalaVersion := "2.11.8"
 crossScalaVersions := Seq("2.11.8", "2.12.1")

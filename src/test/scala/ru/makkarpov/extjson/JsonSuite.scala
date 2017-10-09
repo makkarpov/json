@@ -135,21 +135,17 @@ object JsonSuite {
 
   case class Test23S(x: String, y: Int)
   case class Test23(tuple: (Int, Test23S))
+
+  // Directly recursive
+  case class Test24(v: Int, @key("n") next: Option[Test24])
+
+  // Indirectly recursive
+  case class Test25S(x: String, y: Option[Test25])
+  case class Test25(x: Int, y: Test25S)
 }
 
 class JsonSuite extends WordSpec with Matchers {
   "JSON generator" must {
-    "resolve already defined implicits" in {
-      val format = Json.generate[Int]
-
-      format.writes(123).toString() shouldBe "123"
-      format.reads(Json.parse("456")).get shouldBe 456
-
-      val format1 = Json.generate[String]
-      format1.writes("xyzzy").toString() shouldBe "\"xyzzy\""
-      format1.reads(Json.parse("\"scala\"")).get shouldBe "scala"
-    }
-
     "format simple case classes" in {
       implicit val format = Json.generate[Test1]
 
@@ -442,6 +438,31 @@ class JsonSuite extends WordSpec with Matchers {
 
       test(Test1("a", 123, true)) shouldBe "{\"a\":\"a\",\"b\":123,\"c\":true}"
       test(Test6("qwe")) shouldBe "\"qwe\""
+    }
+
+    "handle direct recursive formats" in {
+      implicit val fmt = Json.generate[Test24]
+
+      def recur(i: Int): Test24 = if (i == 1) Test24(i, None) else Test24(i, Some(recur(i - 1)))
+      def test(i: Int): String = Json.toJson(recur(i)).toString
+
+      test(1) shouldBe "{\"v\":1}"
+      test(2) shouldBe "{\"v\":2,\"n\":{\"v\":1}}"
+      test(3) shouldBe "{\"v\":3,\"n\":{\"v\":2,\"n\":{\"v\":1}}}"
+      test(10) shouldBe "{\"v\":10,\"n\":{\"v\":9,\"n\":{\"v\":8,\"n\":{\"v\":7,\"n\":{\"v\":6,\"n\":{\"v\":5,\"n\":{"+
+                        "\"v\":4,\"n\":{\"v\":3,\"n\":{\"v\":2,\"n\":{\"v\":1}}}}}}}}}}"
+    }
+
+    "handle indirect recursive formats" in {
+      implicit val fmt = Json.generate[Test25]
+
+      def recur(i: Int): Test25 =
+        if (i == 1) Test25(i, Test25S("t" + i, None)) else Test25(i, Test25S("n" + i, Some(recur(i - 1))))
+      def test(i: Int): String = Json.toJson(recur(i)).toString
+
+      test(1) shouldBe "{\"x\":1,\"y\":{\"x\":\"t1\"}}"
+      test(5) shouldBe "{\"x\":5,\"y\":{\"x\":\"n5\",\"y\":{\"x\":4,\"y\":{\"x\":\"n4\",\"y\":{\"x\":3,\"y\":{\"x\":\""+
+                       "n3\",\"y\":{\"x\":2,\"y\":{\"x\":\"n2\",\"y\":{\"x\":1,\"y\":{\"x\":\"t1\"}}}}}}}}}}"
     }
   }
 }

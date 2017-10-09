@@ -24,6 +24,27 @@ import scala.language.higherKinds
 object JsonUtils {
   val valueField = "value"
 
+  class RecursiveHelper[T] extends Format[T] {
+    private var fmt: Format[T] = _
+
+    def update(f: Format[T]): Unit = fmt = f
+
+    override def reads(json: JsValue): JsResult[T] = fmt.reads(json)
+    override def map[B](f: (T) => B): Reads[B] = fmt.map(f)
+    override def flatMap[B](f: (T) => Reads[B]): Reads[B] = fmt.flatMap(f)
+    override def filter(f: (T) => Boolean): Reads[T] = fmt.filter(f)
+    override def filter(error: JsonValidationError)(f: (T) => Boolean): Reads[T] = fmt.filter(error)(f)
+    override def filterNot(f: (T) => Boolean): Reads[T] = fmt.filterNot(f)
+    override def filterNot(error: JsonValidationError)(f: (T) => Boolean): Reads[T] = fmt.filterNot(error)(f)
+    override def collect[B](error: JsonValidationError)(f: PartialFunction[T, B]): Reads[B] = fmt.collect(error)(f)
+    override def orElse(v: Reads[T]): Reads[T] = fmt.orElse(v)
+    override def compose[B <: JsValue](rb: Reads[B]): Reads[T] = fmt.compose(rb)
+    override def andThen[B](rb: Reads[B])(implicit witness: <:<[T, JsValue]): Reads[B] = fmt.andThen(rb)(witness)
+    override def writes(o: T): JsValue = fmt.writes(o)
+    override def transform(transformer: (JsValue) => JsValue): Writes[T] = fmt.transform(transformer)
+    override def transform(transformer: Writes[JsValue]): Writes[T] = fmt.transform(transformer)
+  }
+
   def addType(typeField: String, typeValue: String, data: JsValue): JsObject = data match {
     case JsObject(fields) => JsObject(fields + (typeField -> JsString(typeValue)))
     case other => Json.obj(typeField -> typeValue, valueField -> other)
@@ -116,6 +137,19 @@ object JsonUtils {
 
         JsSuccess(bld)
       case _ => JsError("expected jsarray or jsstring")
+    }
+  }
+
+  def optionFormat[T](fmt: Format[T]): Format[Option[T]] = new Format[Option[T]] {
+    override def reads(json: JsValue): JsResult[Option[T]] =
+      json.validate[JsArray].flatMap {
+        case j: JsArray if j.value.size == 1 => fmt.reads(j.value.head).map(Some(_))
+        case j: JsArray if j.value.isEmpty => JsSuccess(None)
+        case _ => JsError("unexped jsArray")
+      }
+    override def writes(o: Option[T]): JsValue = o match {
+      case Some(x) => JsArray(Seq( fmt.writes(x) ))
+      case None => JsArray(Nil)
     }
   }
 }

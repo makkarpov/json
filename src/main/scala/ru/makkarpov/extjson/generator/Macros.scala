@@ -48,22 +48,30 @@ class Macros(val c: whitebox.Context) extends Utils with Structured with Miscell
     def requireImplicit(x: Symbol): Boolean = annotationPresent[requireImplicit](x)
   }
 
-  case class GenerationContext(initial: Boolean, requireImplicit: Boolean, generationStack: List[Type]) {
+  case class GenerationContext(initial: Boolean, requireImplicit: Boolean, generationStack: List[(Type, TermName)]) {
     def fallback(t: Type): GenerationContext = copy(
       requireImplicit = requireImplicit || GenerationContext.requireImplicit(t.typeSymbol)
     )
 
-    def subGenerate(sym: Symbol): Tree = generate(toType(sym), copy(
-      initial = false,
-      requireImplicit = GenerationContext.requireImplicit(sym),
-      generationStack = toType(sym) :: generationStack
-    ))
+    def subGenerate(sym: Symbol): Tree = {
+      val serializerName = TermName(c.freshName("generated"))
 
-    def subGenerate(t: Type): Tree = generate(t, copy(
-      initial = false,
-      requireImplicit = GenerationContext.requireImplicit(t.typeSymbol),
-      generationStack = t :: generationStack
-    ))
+      generate(toType(sym), copy(
+        initial = false,
+        requireImplicit = GenerationContext.requireImplicit(sym),
+        generationStack = (toType(sym), serializerName) :: generationStack
+      ))
+    }
+
+    def subGenerate(t: Type): Tree = {
+      val serializerName = TermName(c.freshName("generated"))
+
+      generate(t, copy(
+        initial = false,
+        requireImplicit = GenerationContext.requireImplicit(t.typeSymbol),
+        generationStack = (t, serializerName) :: generationStack
+      ))
+    }
 
     def abort(msg: String): Nothing = {
       val currentType = show(generationStack.head)
@@ -82,14 +90,28 @@ class Macros(val c: whitebox.Context) extends Utils with Structured with Miscell
     val t = bt.dealias
     val ctx = bctx.fallback(t)
 
-    var ret = implicitApplied(t)(typeOf[Format[_]], Seq(q"import $ownPkg.JsonFormats._"))
+    // Check for recursion:
+    var ret = bctx.generationStack.tail.find(_._1 =:= t) match {
+      case Some((_, name)) => q"$name"
+      case None => EmptyTree
+    }
+
+    if (ret.isEmpty) {
+      ret =
+        if (ctx.initial) EmptyTree
+        else implicitApplied(t)(typeOf[Format[_]], Seq(q"import $ownPkg.JsonFormats._"))
+    }
+
     if (ret.nonEmpty)
       return ret
 
     if (ctx.requireImplicit && !ctx.initial)
       ctx.abort("@requireImplicit annotation is present, refusing to generate")
 
-    if (t.typeSymbol.isClass) {
+    if (ret.isEmpty)
+      ret = generateCollection(ctx, t)
+
+    if (ret.isEmpty && t.typeSymbol.isClass) {
       val clazz = t.typeSymbol.asClass
 
       if (clazz.isSealed) {
@@ -102,17 +124,22 @@ class Macros(val c: whitebox.Context) extends Utils with Structured with Miscell
     }
 
     if (ret.isEmpty)
-      ret = generateCollection(ctx, t)
-
-    if (ret.isEmpty)
       ret = generateMisc(ctx, t)
 
     if (ret.isEmpty)
       ctx.abort("Unknown type: could not generate formatter and no implicit Format found.")
 
-    ret
+    val ownName = ctx.generationStack.head._2
+
+    q"""
+       val $ownName = new $ownPkg.JsonUtils.RecursiveHelper[$t]()
+       $ownName() = $ret
+       $ret
+     """
   }
 
-  def generate[T](tag: WeakTypeTag[T]): Tree =
-    generate(tag.tpe, GenerationContext(initial = true, requireImplicit = false, tag.tpe :: Nil))
+  def generate[T](tag: WeakTypeTag[T]): Tree = {
+    val serializerName = TermName(c.freshName("generated"))
+    generate(tag.tpe, GenerationContext(initial = true, requireImplicit = false, (tag.tpe, serializerName) :: Nil))
+  }
 }

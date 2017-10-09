@@ -56,6 +56,9 @@ trait Miscellaneous { this: Macros =>
 
         q"$ownPkg.JsonUtils.mapFormat[$tsym, $tkey, $tval]($kfmt, $vfmt, $cbf)"
 
+      case TypeRef(_, _, sub :: Nil) if check[Option[_]] =>
+        q"$ownPkg.JsonUtils.optionFormat[$sub](${ctx.subGenerate(sub)})"
+
       case _ => EmptyTree
     }
   }

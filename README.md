@@ -14,6 +14,7 @@ Features (see [tests](https://github.com/makkarpov/pray-json/blob/master/src/tes
 * **fully recursive generation** — no need for intermediate serializer implicits;
    * generation can be restricted using `@requireImplicit` annotation.
    * implicit search for `Format[T]` happens also in a companion object of `T`, and, if companion itself is inside of object — in all outer objects.
+   * recursive structures are also supported.
 * generation of `case class` serializers:
    * simple case classes;
    * renamed fields using `@key` annotation;

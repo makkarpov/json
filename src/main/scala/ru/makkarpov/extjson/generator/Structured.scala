@@ -22,7 +22,7 @@ trait Structured { this: Macros =>
   import c.universe._
 
   def generateCaseClass(ctx: GenerationContext, clazz: ClassSymbol): Tree = {
-    val obj = clazz.companion
+    val obj = clazz.companionSymbol
 
     if (obj == NoSymbol)
       ctx.abort(
