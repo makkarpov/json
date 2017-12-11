@@ -21,6 +21,8 @@ import ru.makkarpov.extjson.annotations._
 trait Structured { this: Macros =>
   import c.universe._
 
+  private def toSnakeCase(s: String): String = s.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase()
+
   def generateCaseClass(ctx: GenerationContext, clazz: ClassSymbol): Tree = {
     val obj = clazz.companionSymbol
 
@@ -63,11 +65,14 @@ trait Structured { this: Macros =>
       """
     }
 
+    val globalSnakeCase = annotationPresent[snakeCase](clazz)
+
     val jsonNames = args.map { sym =>
       if (annotationPresent[key](sym)) stringLiteral(singleArgAnnotation[key](sym)) match {
         case Some(s) => s
         case None => ctx.abort("value of @key annotation must be a string literal")
-      } else sym.name.decodedName.toString
+      } else if (globalSnakeCase || annotationPresent[snakeCase](sym)) toSnakeCase(sym.name.decodedName.toString)
+      else sym.name.decodedName.toString
     }
 
     val defaults = {
@@ -95,7 +100,8 @@ trait Structured { this: Macros =>
     val serializerNames = args.map(_ => TermName(c.freshName("serializer")))
 
     val serializerDefs = args.zipWithIndex.map { case (a, i) =>
-      val ser = ctx.subGenerate(if (optionalFields(i)) toType(a).typeArgs.head else toType(a))
+      val ser = ctx.subGenerate(if (optionalFields(i)) toType(a).typeArgs.head else toType(a),
+                                        fromString = annotationPresent[asString](a))
       q"val ${serializerNames(i)} = $ser"
     }
 
@@ -342,6 +348,6 @@ trait Structured { this: Macros =>
     val subs = tuple.typeArgs
     val funcName = TermName(s"tuple${subs.size}Format")
 
-    q"$ownPkg.JsonFormats.$funcName[..$subs](..${subs.map(ctx.subGenerate)})"
+    q"$ownPkg.JsonFormats.$funcName[..$subs](..${subs.map(ctx.subGenerate(_))})"
   }
 }

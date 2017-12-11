@@ -91,7 +91,7 @@ object JsonSuite {
 
   case class Test15(a: String, b: String)
   object Test15 {
-    implicit val kser = new KeyFormat[Test15] {
+    implicit val kser = new StrFormat[Test15] {
       override def write(t: Test15): String = t.a + "/" + t.b
       override def read(s: String): Either[JsError, Test15] = s.split("/") match {
         case Array(a, b) => Right(Test15(a, b))
@@ -142,6 +142,19 @@ object JsonSuite {
   // Indirectly recursive
   case class Test25S(x: String, y: Option[Test25])
   case class Test25(x: Int, y: Test25S)
+
+  // String values:
+  case class Test26(@asString x: Int, @asString y: Long)
+
+  // Optional string values:
+  case class Test27(@asString x: Option[Int])
+
+  // Snake case:
+  case class Test28(somethingUseful: Int, @snakeCase somethingNotUseful: Long)
+
+  // Global snake case:
+  @snakeCase
+  case class Test29(helloWorld: Int, someValue: Long)
 }
 
 class JsonSuite extends WordSpec with Matchers {
@@ -463,6 +476,30 @@ class JsonSuite extends WordSpec with Matchers {
       test(1) shouldBe "{\"x\":1,\"y\":{\"x\":\"t1\"}}"
       test(5) shouldBe "{\"x\":5,\"y\":{\"x\":\"n5\",\"y\":{\"x\":4,\"y\":{\"x\":\"n4\",\"y\":{\"x\":3,\"y\":{\"x\":\""+
                        "n3\",\"y\":{\"x\":2,\"y\":{\"x\":\"n2\",\"y\":{\"x\":1,\"y\":{\"x\":\"t1\"}}}}}}}}}}"
+    }
+
+    "handle string values" in {
+      implicit val fmt = Json.generate[Test26]
+      Json.toJson(Test26(123, 456)).toString shouldBe "{\"x\":\"123\",\"y\":\"456\"}"
+      Json.parse("{\"x\":\"456\",\"y\":\"123\"}").as[Test26] shouldBe Test26(456, 123)
+    }
+
+    "handle optional string values" in {
+      implicit val fmt = Json.generate[Test27]
+      Json.toJson(Test27(Some(1234))).toString shouldBe "{\"x\":\"1234\"}"
+      Json.toJson(Test27(None)).toString shouldBe "{}"
+      Json.parse("{}").as[Test27] shouldBe Test27(None)
+      Json.parse("{\"x\":\"4321\"}").as[Test27] shouldBe Test27(Some(4321))
+    }
+
+    "handle snake case" in {
+      implicit val fmt = Json.generate[Test28]
+      Json.toJson(Test28(123, 456)).toString shouldBe "{\"somethingUseful\":123,\"something_not_useful\":456}"
+    }
+
+    "handle global snake case" in {
+      implicit val fmt = Json.generate[Test29]
+      Json.toJson(Test29(123, 456)).toString shouldBe "{\"hello_world\":123,\"some_value\":456}"
     }
   }
 }

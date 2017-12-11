@@ -17,9 +17,10 @@ Features (see [tests](https://github.com/makkarpov/pray-json/blob/master/src/tes
    * recursive structures are also supported.
 * generation of `case class` serializers:
    * simple case classes;
-   * renamed fields using `@key` annotation;
+   * renamed fields using `@key` annotation. it also can transform key names to snake_case automatically;
    * support for default values;
    * support for `Option`al fields.
+   * in some APIs fields should be serialized as strings even if they aren't strings. This is also supported;
    * inline formatting of case classes with single parameter
 * generation of `sealed` serializers:
    * automatically added `type` field to distinguish between cases;

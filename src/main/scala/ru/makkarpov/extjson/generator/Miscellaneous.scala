@@ -16,7 +16,7 @@
 
 package ru.makkarpov.extjson.generator
 
-import ru.makkarpov.extjson.KeyFormat
+import ru.makkarpov.extjson.StrFormat
 
 trait Miscellaneous { this: Macros =>
   import c.universe._
@@ -39,12 +39,12 @@ trait Miscellaneous { this: Macros =>
         q"$ownPkg.JsonUtils.traversableFormat[$tsym, $sub]($cbf, $format)"
 
       case TypeRef(_, _, tkey :: tval :: Nil) if check[Map[_, _]] =>
-        val kfmt = implicitApplied(tkey)(typeOf[KeyFormat[_]], Nil)
+        val kfmt = implicitApplied(tkey)(typeOf[StrFormat[_]], Nil)
 
         if (kfmt.isEmpty)
           ctx.abort(
             s"""Failed to find a key formatter for $tkey.
-               |Consider implementing an implicit KeyFormat[$tkey]
+               |Consider implementing an implicit StrFormat[$tkey]
              """.stripMargin)
 
         val cbf = resolveImplicit(Nil, tq"$canBuildFrom[$tsym[_, _], ($tkey, $tval), $tsym[$tkey, $tval]]")

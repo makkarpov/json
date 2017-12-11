@@ -80,7 +80,7 @@ object JsonUtils {
     Format(reads, writes)
   }
 
-  def mapFormat[M[X, Y] <: Map[X, Y], K, V](fk: KeyFormat[K], fv: Format[V],
+  def mapFormat[M[X, Y] <: Map[X, Y], K, V](fk: StrFormat[K], fv: Format[V],
                                             cbf: CanBuildFrom[M[_, _], (K, V), M[K, V]]): Format[M[K, V]] =
     new Format[M[K, V]] {
       override def reads(json: JsValue): JsResult[M[K, V]] = json match {

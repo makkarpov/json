@@ -17,6 +17,7 @@
 package ru.makkarpov.extjson.generator
 
 import play.api.libs.json.Format
+import ru.makkarpov.extjson.StrFormat
 import ru.makkarpov.extjson.annotations.requireImplicit
 
 import scala.reflect.macros.whitebox
@@ -48,7 +49,8 @@ class Macros(val c: whitebox.Context) extends Utils with Structured with Miscell
     def requireImplicit(x: Symbol): Boolean = annotationPresent[requireImplicit](x)
   }
 
-  case class GenerationContext(initial: Boolean, requireImplicit: Boolean, generationStack: List[(Type, TermName)]) {
+  case class GenerationContext(initial: Boolean, requireImplicit: Boolean, fromString: Boolean,
+                               generationStack: List[(Type, TermName)]) {
     def fallback(t: Type): GenerationContext = copy(
       requireImplicit = requireImplicit || GenerationContext.requireImplicit(t.typeSymbol)
     )
@@ -63,19 +65,20 @@ class Macros(val c: whitebox.Context) extends Utils with Structured with Miscell
       ))
     }
 
-    def subGenerate(t: Type): Tree = {
+    def subGenerate(t: Type, fromString: Boolean = fromString): Tree = {
       val serializerName = TermName(c.freshName("generated"))
 
       generate(t, copy(
         initial = false,
         requireImplicit = GenerationContext.requireImplicit(t.typeSymbol),
+        fromString = fromString,
         generationStack = (t, serializerName) :: generationStack
       ))
     }
 
     def abort(msg: String): Nothing = {
-      val currentType = show(generationStack.head)
-      val outerTypes = generationStack.tail.map(show(_)).reverse.mkString(" -> ")
+      val currentType = show(generationStack.head._1)
+      val outerTypes = generationStack.tail.map(x => show(x._1)).reverse.mkString(" -> ")
       val stackStr = if (outerTypes.isEmpty) "" else s"\nCalled from: $outerTypes"
 
       c.abort(c.enclosingPosition,
@@ -89,6 +92,14 @@ class Macros(val c: whitebox.Context) extends Utils with Structured with Miscell
   def generate(bt: Type, bctx: GenerationContext): Tree = {
     val t = bt.dealias
     val ctx = bctx.fallback(t)
+
+    if (ctx.fromString) {
+      val ret = implicitApplied(t)(typeOf[StrFormat[_]], Seq(q"import $ownPkg.StrFormat._"))
+      if (ret.isEmpty)
+        ctx.abort("@asString found and no implicit StrFormat is present")
+
+      return q"$ret.format"
+    }
 
     // Check for recursion:
     var ret = bctx.generationStack.tail.find(_._1 =:= t) match {
@@ -140,6 +151,7 @@ class Macros(val c: whitebox.Context) extends Utils with Structured with Miscell
 
   def generate[T](tag: WeakTypeTag[T]): Tree = {
     val serializerName = TermName(c.freshName("generated"))
-    generate(tag.tpe, GenerationContext(initial = true, requireImplicit = false, (tag.tpe, serializerName) :: Nil))
+    generate(tag.tpe, GenerationContext(initial = true, requireImplicit = false, fromString = false,
+      (tag.tpe, serializerName) :: Nil))
   }
 }
