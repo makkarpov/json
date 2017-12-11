@@ -155,6 +155,10 @@ object JsonSuite {
   // Global snake case:
   @snakeCase
   case class Test29(helloWorld: Int, someValue: Long)
+
+  // Inline asString:
+  @formatInline
+  case class Test30(@asString x: Long)
 }
 
 class JsonSuite extends WordSpec with Matchers {
@@ -500,6 +504,12 @@ class JsonSuite extends WordSpec with Matchers {
     "handle global snake case" in {
       implicit val fmt = Json.generate[Test29]
       Json.toJson(Test29(123, 456)).toString shouldBe "{\"hello_world\":123,\"some_value\":456}"
+    }
+
+    "handle inline @asString's" in {
+      implicit val fmt = Json.generate[Test30]
+      Json.toJson(Test30(1234)).toString shouldBe "\"1234\""
+      Json.parse("\"4321\"").as[Test30] shouldBe Test30(4321)
     }
   }
 }

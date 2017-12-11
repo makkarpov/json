@@ -34,7 +34,7 @@ trait Miscellaneous { this: Macros =>
         if (cbf.isEmpty)
           ctx.abort(s"Failed to find CanBuildFrom for ${show(q"$tsym[$sub]")}")
 
-        val format = ctx.subGenerate(sub)
+        val format = ctx.subGenerateTpe(sub)
 
         q"$ownPkg.JsonUtils.traversableFormat[$tsym, $sub]($cbf, $format)"
 
@@ -52,12 +52,12 @@ trait Miscellaneous { this: Macros =>
         if (cbf.isEmpty)
           ctx.abort(s"Failed to find CanBuildFrom for ${show(q"$tsym[$tkey, $tval]")}")
 
-        val vfmt = ctx.subGenerate(tval)
+        val vfmt = ctx.subGenerateTpe(tval)
 
         q"$ownPkg.JsonUtils.mapFormat[$tsym, $tkey, $tval]($kfmt, $vfmt, $cbf)"
 
       case TypeRef(_, _, sub :: Nil) if check[Option[_]] =>
-        q"$ownPkg.JsonUtils.optionFormat[$sub](${ctx.subGenerate(sub)})"
+        q"$ownPkg.JsonUtils.optionFormat[$sub](${ctx.subGenerateTpe(sub)})"
 
       case _ => EmptyTree
     }

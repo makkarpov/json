@@ -55,17 +55,18 @@ class Macros(val c: whitebox.Context) extends Utils with Structured with Miscell
       requireImplicit = requireImplicit || GenerationContext.requireImplicit(t.typeSymbol)
     )
 
-    def subGenerate(sym: Symbol): Tree = {
+    def subGenerateSym(sym: Symbol, fromString: Boolean = fromString): Tree = {
       val serializerName = TermName(c.freshName("generated"))
 
       generate(toType(sym), copy(
         initial = false,
         requireImplicit = GenerationContext.requireImplicit(sym),
+        fromString = fromString,
         generationStack = (toType(sym), serializerName) :: generationStack
       ))
     }
 
-    def subGenerate(t: Type, fromString: Boolean = fromString): Tree = {
+    def subGenerateTpe(t: Type, fromString: Boolean = fromString): Tree = {
       val serializerName = TermName(c.freshName("generated"))
 
       generate(t, copy(

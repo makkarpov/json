@@ -47,7 +47,7 @@ trait Structured { this: Macros =>
         ctx.abort("Cannot @formatInline case class with multiple arguments")
 
       val serializerName = TermName("serializer")
-      val serializer = ctx.subGenerate(args.head)
+      val serializer = ctx.subGenerateSym(args.head, fromString = annotationPresent[asString](args.head))
       val readsParameter = TermName("js")
       val writesParameter = TermName("obj")
       val fieldName = TermName(fieldNames.head)
@@ -100,7 +100,7 @@ trait Structured { this: Macros =>
     val serializerNames = args.map(_ => TermName(c.freshName("serializer")))
 
     val serializerDefs = args.zipWithIndex.map { case (a, i) =>
-      val ser = ctx.subGenerate(if (optionalFields(i)) toType(a).typeArgs.head else toType(a),
+      val ser = ctx.subGenerateTpe(if (optionalFields(i)) toType(a).typeArgs.head else toType(a),
                                         fromString = annotationPresent[asString](a))
       q"val ${serializerNames(i)} = $ser"
     }
@@ -213,7 +213,7 @@ trait Structured { this: Macros =>
 
     val serializers = subclasses.map { sc =>
       val name = TermName(c.freshName("serializer"))
-      val valdef = q"val $name = ${ctx.subGenerate(sc)}"
+      val valdef = q"val $name = ${ctx.subGenerateSym(sc)}"
       sc -> (name -> valdef)
     }.toMap
 
@@ -348,6 +348,6 @@ trait Structured { this: Macros =>
     val subs = tuple.typeArgs
     val funcName = TermName(s"tuple${subs.size}Format")
 
-    q"$ownPkg.JsonFormats.$funcName[..$subs](..${subs.map(ctx.subGenerate(_))})"
+    q"$ownPkg.JsonFormats.$funcName[..$subs](..${subs.map(ctx.subGenerateTpe(_))})"
   }
 }
