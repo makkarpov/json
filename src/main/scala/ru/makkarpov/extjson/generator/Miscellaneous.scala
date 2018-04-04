@@ -1,70 +1,77 @@
-/******************************************************************************
- * Copyright © 2017 Maxim Karpov                                              *
- *                                                                            *
- * Licensed under the Apache License, Version 2.0 (the "License");            *
- * you may not use this file except in compliance with the License.           *
- * You may obtain a copy of the License at                                    *
- *                                                                            *
- *     http://www.apache.org/licenses/LICENSE-2.0                             *
- *                                                                            *
- * Unless required by applicable law or agreed to in writing, software        *
- * distributed under the License is distributed on an "AS IS" BASIS,          *
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.   *
- * See the License for the specific language governing permissions and        *
- * limitations under the License.                                             *
- ******************************************************************************/
-
-package ru.makkarpov.extjson.generator
+package ru.makkarpov.extjson.xgenerator
 
 import ru.makkarpov.extjson.StrFormat
 
-trait Miscellaneous { this: Macros =>
+trait Collections { this: Macros =>
   import c.universe._
 
-  val canBuildFrom = tq"_root_.scala.collection.generic.CanBuildFrom"
+  private def check[T](tpe: Type)(implicit tt: TypeTag[T]): Boolean =
+    tpe.erasure <:< tt.tpe.erasure
 
-  def generateCollection(ctx: GenerationContext, tpe: Type): Tree = {
-    def check[T](implicit tt: TypeTag[T]): Boolean = tpe.erasure <:< tt.tpe.erasure
-    val tsym = tpe.typeSymbol
+  private val canBuildFrom = tq"_root_.scala.collection.generic.CanBuildFrom"
 
-    tpe match {
-      case TypeRef(_, _, sub :: Nil) if check[Traversable[_]] =>
-        val cbf = resolveImplicit(Nil, tq"$canBuildFrom[$tsym[_], $sub, $tsym[$sub]]")
+  class TraversablePlugin extends GenerationPlugin {
+    override def appliesTo(tpe: Type): Boolean = check[Traversable[_]](tpe) && tpe.typeArgs.size == 1
 
-        if (cbf.isEmpty)
-          ctx.abort(s"Failed to find CanBuildFrom for ${show(q"$tsym[$sub]")}")
+    override def getDependencies(tpe: Type, ctx: GenerationContext): Seq[GenerationDependency] = {
+      val TypeRef(_, _, sub :: Nil) = tpe
+      dependency(sub) :: Nil
+    }
 
-        val format = ctx.subGenerateTpe(sub)
+    override def generate(tpe: Type, ctx: GenerationContext): Tree = {
+      val serializer = ctx.serializer(getDependencies(tpe, ctx).head)
+      val tsym = tpe.typeSymbol
+      val TypeRef(_, _, sub :: Nil) = tpe
 
-        q"$ownPkg.JsonUtils.traversableFormat[$tsym, $sub]($cbf, $format)"
+      val cbf = resolveImplicit(Nil, tq"$canBuildFrom[$tsym[_], $sub, $tsym[$sub]]")
 
-      case TypeRef(_, _, tkey :: tval :: Nil) if check[Map[_, _]] =>
-        val kfmt = implicitApplied(tkey)(typeOf[StrFormat[_]], Nil)
+      if (cbf.isEmpty)
+        ctx.abort(s"Failed to find CanBuildFrom for ${show(q"$tsym[$sub]")}")
 
-        if (kfmt.isEmpty)
-          ctx.abort(
-            s"""Failed to find a key formatter for $tkey.
-               |Consider implementing an implicit StrFormat[$tkey]
-             """.stripMargin)
-
-        val cbf = resolveImplicit(Nil, tq"$canBuildFrom[$tsym[_, _], ($tkey, $tval), $tsym[$tkey, $tval]]")
-
-        if (cbf.isEmpty)
-          ctx.abort(s"Failed to find CanBuildFrom for ${show(q"$tsym[$tkey, $tval]")}")
-
-        val vfmt = ctx.subGenerateTpe(tval)
-
-        q"$ownPkg.JsonUtils.mapFormat[$tsym, $tkey, $tval]($kfmt, $vfmt, $cbf)"
-
-      case TypeRef(_, _, sub :: Nil) if check[Option[_]] =>
-        q"$ownPkg.JsonUtils.optionFormat[$sub](${ctx.subGenerateTpe(sub)})"
-
-      case _ => EmptyTree
+      q"$ownPkg.JsonUtils.traversableFormat[$tsym, $sub]($cbf, $serializer)"
     }
   }
 
-  def generateMisc(ctx: GenerationContext, tpe: Type): Tree = tpe match {
-    case TypeRef(base, value, Nil) if base <:< weakTypeOf[Enumeration] =>
+  class MapPlugin extends GenerationPlugin {
+    override def appliesTo(tpe: Type): Boolean = check[Map[_, _]](tpe) && tpe.typeArgs.size == 2
+
+    override def getDependencies(tpe: Type, ctx: GenerationContext): Seq[GenerationDependency] = {
+      val TypeRef(_, _, _ :: tval :: Nil) = tpe
+      dependency(tval) :: Nil
+    }
+
+    override def generate(tpe: Type, ctx: GenerationContext): Tree = {
+      val TypeRef(_, _, tkey :: tval :: Nil) = tpe
+      val tsym = tpe.typeSymbol
+      val kfmt = implicitApplied(tkey)(typeOf[StrFormat[_]], Nil)
+
+      if (kfmt.isEmpty)
+        ctx.abort(
+          s"""Failed to find a key formatter for $tkey.
+             |Consider implementing an implicit StrFormat[$tkey]
+             """.stripMargin)
+
+      val cbf = resolveImplicit(Nil, tq"$canBuildFrom[$tsym[_, _], ($tkey, $tval), $tsym[$tkey, $tval]]")
+
+      if (cbf.isEmpty)
+        ctx.abort(s"Failed to find CanBuildFrom for ${show(q"$tsym[$tkey, $tval]")}")
+
+      val vfmt = ctx.serializer(getDependencies(tpe, ctx).head)
+      q"$ownPkg.JsonUtils.mapFormat[$tsym, $tkey, $tval]($kfmt, $vfmt, $cbf)"
+    }
+  }
+
+  class EnumerationPlugin extends GenerationPlugin {
+    override def appliesTo(tpe: Type): Boolean = tpe match {
+      case TypeRef(base, _, Nil) => check[Enumeration](base)
+      case _ => false
+    }
+
+    override def getDependencies(tpe: Type, ctx: GenerationContext): Seq[GenerationDependency] = Nil
+
+    override def generate(tpe: Type, ctx: GenerationContext): Tree = {
+      val TypeRef(base, value, Nil) = tpe
+
       val obj = base.typeSymbol.companionSymbol match { // `companionSymbol` is necessary here
         case NoSymbol => ctx.abort(s"Failed to find companion for ${show(base)}")
         case t if t.isTerm => t
@@ -76,6 +83,36 @@ trait Miscellaneous { this: Macros =>
         case "ValueSet" => q"$ownPkg.JsonUtils.enumerationSetFormat($obj)"
         case x => ctx.abort(s"Unknown Enumeration inner class: $x")
       }
-    case _ => EmptyTree
+    }
+  }
+
+  class OptionPlugin extends GenerationPlugin {
+    override def appliesTo(tpe: c.universe.Type): Boolean = check[Option[_]](tpe) && tpe.typeArgs.size == 1
+
+    override def getDependencies(tpe: c.universe.Type, ctx: GenerationContext): Seq[GenerationDependency] = {
+      val TypeRef(_, _, arg :: Nil) = tpe
+      dependency(arg) :: Nil
+    }
+
+    override def generate(tpe: c.universe.Type, ctx: GenerationContext): c.universe.Tree = {
+      val TypeRef(_, _, arg :: Nil) = tpe
+      q"$ownPkg.JsonUtils.optionFormat[$arg](${ctx.serializer(getDependencies(tpe, ctx).head)})"
+    }
+  }
+
+  class TuplePlugin extends GenerationPlugin {
+    override def appliesTo(tpe: Type): Boolean =
+      tpe.typeSymbol.isClass && isTuple(tpe.typeSymbol.asClass)
+
+    override def getDependencies(tpe: Type, ctx: GenerationContext): Seq[GenerationDependency] =
+      tpe.typeArgs.map(dependency)
+
+    override def generate(tpe: Type, ctx: GenerationContext): Tree = {
+      val subs = tpe.typeArgs
+      val funcName = TermName(s"tuple${subs.size}Format")
+      val deps = getDependencies(tpe, ctx).map(ctx.serializer)
+
+      q"$ownPkg.JsonFormats.$funcName[..$subs](..$deps)"
+    }
   }
 }

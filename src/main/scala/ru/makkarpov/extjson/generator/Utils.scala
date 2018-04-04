@@ -14,10 +14,13 @@
  * limitations under the License.                                             *
  ******************************************************************************/
 
-package ru.makkarpov.extjson.generator
+package ru.makkarpov.extjson.xgenerator
 
 trait Utils { this: Macros =>
   import c.universe._
+
+  val jsonPkg = q"_root_.play.api.libs.json"
+  val ownPkg = q"_root_.ru.makkarpov.extjson"
 
   def toType(x: Symbol): Type = if (x.isType) x.asType.toType else x.typeSignature
 
